@@ -1,11 +1,10 @@
-// readflow: poll input_pdfs for new PDFs
-
 package main
 
 import (
 	"bufio"
 	"fmt"
 	"os"
+	"readflow/src/extract"
 	"strings"
 )
 
@@ -63,10 +62,13 @@ func main() {
 		}
 
 		fmt.Println("New PDF detected:", f.Name())
+		err = extract.ExtractText(inputDir + "/" + f.Name())
+		if err != nil {
+			fmt.Println("Error extracting text:", err)
+			continue
+		}
 
-		// TODO: text extraction will go here later
-
-		err := markProcessed(processedFile, f.Name())
+		err = markProcessed(processedFile, f.Name())
 		if err != nil {
 			fmt.Println("Failed to mark processed:", err)
 			continue
