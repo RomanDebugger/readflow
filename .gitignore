@@ -1,0 +1,12 @@
+data/input_pdfs/
+data/extracted_text/
+data/processed.txt
+
+*.exe
+*.out
+*.test
+bin/
+
+.DS_Store
+.vscode/
+.idea/
