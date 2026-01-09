@@ -16,6 +16,16 @@ type DocumentText struct {
 	Pages    []PageText `json:"pages"`
 }
 
+func safePageContent(p pdf.Page) (content pdf.Content, ok bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			ok = false
+		}
+	}()
+	content = p.Content()
+	return content, true
+}
+
 func ExtractText(path string) (*DocumentText, error) {
 
 	doc := DocumentText{
@@ -36,7 +46,10 @@ func ExtractText(path string) (*DocumentText, error) {
 
 		var pageText strings.Builder
 
-		content := p.Content()
+		content, ok := safePageContent(p)
+		if !ok {
+			continue
+		}
 		for _, txt := range content.Text {
 			pageText.WriteString(txt.S)
 		}
