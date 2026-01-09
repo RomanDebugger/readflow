@@ -1,6 +1,7 @@
 data/input_pdfs/
 data/extracted_text/
 data/processed.txt
+data/normalized_text/
 
 *.exe
 *.out

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"readflow/src/extract"
+	"readflow/src/normalize"
 	"strings"
 )
 
@@ -93,6 +94,15 @@ func main() {
 		err = saveExtracted(doc, "data/extracted_text")
 		if err != nil {
 			fmt.Println("Error saving extracted text:", err)
+			continue
+		}
+
+		rawPath := filepath.Join("data/extracted_text",
+			strings.TrimSuffix(f.Name(), ".pdf")+".json")
+
+		err = normalize.NormalizeDocument(rawPath, "data/normalized_text")
+		if err != nil {
+			fmt.Println("Normalization failed:", err)
 			continue
 		}
 
