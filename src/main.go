@@ -2,8 +2,10 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"readflow/src/extract"
 	"strings"
 )
@@ -38,6 +40,26 @@ func markProcessed(path string, filename string) error {
 	return err
 }
 
+func saveExtracted(doc *extract.DocumentText, outDir string) error {
+	os.MkdirAll(outDir, 0755)
+
+	base := filepath.Base(doc.Document)
+	name := strings.TrimSuffix(base, filepath.Ext(base))
+
+	outPath := filepath.Join(outDir, name+".json")
+
+	file, err := os.Create(outPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := json.NewEncoder(file)
+	encoder.SetIndent("", "  ")
+
+	return encoder.Encode(doc)
+}
+
 func main() {
 	fmt.Println("readflow started")
 
@@ -62,9 +84,15 @@ func main() {
 		}
 
 		fmt.Println("New PDF detected:", f.Name())
-		err = extract.ExtractText(inputDir + "/" + f.Name())
+		doc, err := extract.ExtractText(inputDir + "/" + f.Name())
 		if err != nil {
 			fmt.Println("Error extracting text:", err)
+			continue
+		}
+
+		err = saveExtracted(doc, "data/extracted_text")
+		if err != nil {
+			fmt.Println("Error saving extracted text:", err)
 			continue
 		}
 
