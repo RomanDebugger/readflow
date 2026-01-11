@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"readflow/src/chunk"
 	"readflow/src/extract"
 	"readflow/src/normalize"
 	"strings"
@@ -61,6 +62,18 @@ func saveExtracted(doc *extract.DocumentText, outDir string) error {
 	return encoder.Encode(doc)
 }
 
+func loadDocument(path string) (*extract.DocumentText, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var doc extract.DocumentText
+	err = json.NewDecoder(file).Decode(&doc)
+	return &doc, err
+}
+
 func main() {
 	fmt.Println("readflow started")
 
@@ -103,6 +116,23 @@ func main() {
 		err = normalize.NormalizeDocument(rawPath, "data/normalized_text")
 		if err != nil {
 			fmt.Println("Normalization failed:", err)
+			continue
+		}
+
+		normalizedPath := filepath.Join(
+			"data/normalized_text",
+			strings.TrimSuffix(f.Name(), ".pdf")+".json",
+		)
+
+		normalizedDoc, err := loadDocument(normalizedPath)
+		if err != nil {
+			fmt.Println("Failed to load normalized doc:", err)
+			continue
+		}
+
+		err = chunk.ChunkDocument(*normalizedDoc, "data/chunks")
+		if err != nil {
+			fmt.Println("Chunking failed:", err)
 			continue
 		}
 
