@@ -2,6 +2,7 @@ package chunk
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,56 +20,45 @@ func ChunkDocument(doc extract.DocumentText, outDir string) error {
 		sentences := SplitIntoSentences(page.Text)
 
 		var buffer strings.Builder
-		charStart := 0
-		// NOTE: CharStart/CharEnd are page-local offsets in v1
+
+		flush := func() {
+			text := strings.TrimSpace(buffer.String())
+			if text == "" {
+				buffer.Reset()
+				return
+			}
+
+			chunks = append(chunks, Chunk{
+				ChunkID: fmt.Sprintf("%s_p%d_c%d", doc.Document, page.Page, chunkIndex),
+				DocID:   doc.Document,
+				Page:    page.Page,
+				Index:   chunkIndex,
+				Text:    text,
+				Length:  len(text),
+			})
+
+			chunkIndex++
+			buffer.Reset()
+		}
 
 		for _, sentence := range sentences {
-			if LooksLikeHeading(sentence) && buffer.Len() > 0 {
-				chunks = append(chunks, Chunk{
-					DocID:      doc.Document,
-					Page:       page.Page,
-					ChunkIndex: chunkIndex,
-					CharStart:  charStart,
-					CharEnd:    charStart + buffer.Len(),
-					Text:       buffer.String(),
-				})
-				chunkIndex++
-				buffer.Reset()
+			// Defensive cap: trim pathological sentences
+			if len(sentence) > MaxChunkSize {
+				sentence = sentence[:MaxChunkSize]
 			}
 
-			if buffer.Len()+len(sentence) > MaxChunkSize {
-				chunks = append(chunks, Chunk{
-					DocID:      doc.Document,
-					Page:       page.Page,
-					ChunkIndex: chunkIndex,
-					CharStart:  charStart,
-					CharEnd:    charStart + buffer.Len(),
-					Text:       buffer.String(),
-				})
-				chunkIndex++
-				buffer.Reset()
+			// If adding this sentence would overflow, flush first
+			if buffer.Len()+len(sentence)+1 > MaxChunkSize {
+				flush()
 			}
 
-			if buffer.Len() == 0 {
-				charStart = 0
+			if buffer.Len() > 0 {
+				buffer.WriteByte(' ')
 			}
-			// TODO: charStart currently resets per chunk (v1 approximation)
-
 			buffer.WriteString(sentence)
-			buffer.WriteString(" ")
 		}
 
-		if buffer.Len() > 0 {
-			chunks = append(chunks, Chunk{
-				DocID:      doc.Document,
-				Page:       page.Page,
-				ChunkIndex: chunkIndex,
-				CharStart:  charStart,
-				CharEnd:    charStart + buffer.Len(),
-				Text:       buffer.String(),
-			})
-			chunkIndex++
-		}
+		flush()
 	}
 
 	if err := os.MkdirAll(outDir, 0755); err != nil {

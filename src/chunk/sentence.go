@@ -1,11 +1,8 @@
 package chunk
 
 import (
-	"regexp"
 	"strings"
 )
-
-var sentenceEnd = regexp.MustCompile(`([.!?])\s+`)
 
 func SplitIntoSentences(text string) []string {
 	var sentences []string
@@ -15,18 +12,25 @@ func SplitIntoSentences(text string) []string {
 		current.WriteByte(text[i])
 
 		if text[i] == '.' || text[i] == '!' || text[i] == '?' {
-			if i+1 == len(text) || text[i+1] == ' ' || text[i+1] == '\n' {
-				s := strings.TrimSpace(current.String())
-				if len(s) > 0 {
-					sentences = append(sentences, s)
-				}
-				current.Reset()
+			s := strings.TrimSpace(current.String())
+			if s != "" {
+				sentences = append(sentences, s)
 			}
+			current.Reset()
+			continue
+		}
+
+		if current.Len() >= 200 {
+			s := strings.TrimSpace(current.String())
+			if s != "" {
+				sentences = append(sentences, s)
+			}
+			current.Reset()
 		}
 	}
 
 	rest := strings.TrimSpace(current.String())
-	if len(rest) > 0 {
+	if rest != "" {
 		sentences = append(sentences, rest)
 	}
 
