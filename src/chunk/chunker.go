@@ -18,38 +18,50 @@ func ChunkDocument(doc extract.DocumentText, outDir string) error {
 
 	for _, page := range doc.Pages {
 		sentences := SplitIntoSentences(page.Text)
-
 		var buffer strings.Builder
 
-		flush := func() {
-			text := strings.TrimSpace(buffer.String())
+		// Helper to create and score a chunk
+		createChunk := func(t string, cType string) {
+			text := strings.TrimSpace(t)
 			if text == "" {
-				buffer.Reset()
 				return
 			}
 
-			chunks = append(chunks, Chunk{
-				ChunkID: fmt.Sprintf("%s_p%d_c%d", doc.Document, page.Page, chunkIndex),
+			newChunk := Chunk{
+				ChunkID: fmt.Sprintf("%s_p%d_c%d", filepath.Base(doc.Document), page.Page, chunkIndex),
 				DocID:   doc.Document,
 				Page:    page.Page,
 				Index:   chunkIndex,
 				Text:    text,
 				Length:  len(text),
-			})
+				Type:    cType,
+			}
 
+			// Apply our new "Simpler" Scorer
+			newChunk.Quality = ScoreChunk(&newChunk)
+
+			chunks = append(chunks, newChunk)
 			chunkIndex++
-			buffer.Reset()
 		}
 
 		for _, sentence := range sentences {
-			// Defensive cap: trim pathological sentences
-			if len(sentence) > MaxChunkSize {
-				sentence = sentence[:MaxChunkSize]
+			isHeading := LooksLikeHeading(sentence)
+
+			// IF it's a heading: Flush existing buffer as paragraph,
+			// then flush heading as its own title chunk
+			if isHeading {
+				if buffer.Len() > 0 {
+					createChunk(buffer.String(), "paragraph")
+					buffer.Reset()
+				}
+				createChunk(sentence, "title")
+				continue
 			}
 
-			// If adding this sentence would overflow, flush first
+			// Normal Chunking Logic
 			if buffer.Len()+len(sentence)+1 > MaxChunkSize {
-				flush()
+				createChunk(buffer.String(), "paragraph")
+				buffer.Reset()
 			}
 
 			if buffer.Len() > 0 {
@@ -58,7 +70,11 @@ func ChunkDocument(doc extract.DocumentText, outDir string) error {
 			buffer.WriteString(sentence)
 		}
 
-		flush()
+		// Final flush for the page
+		if buffer.Len() > 0 {
+			createChunk(buffer.String(), "paragraph")
+			buffer.Reset()
+		}
 	}
 
 	if err := os.MkdirAll(outDir, 0755); err != nil {

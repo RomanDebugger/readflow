@@ -14,11 +14,25 @@ func LooksLikeHeading(s string) bool {
 		return false
 	}
 
+	if len(s) < 8 {
+		return false
+	}
+
+	if strings.ContainsAny(s, "|=+*\\") || strings.HasPrefix(s, ":") {
+		return false
+	}
+
 	runes := []rune(s)
 	length := len(runes)
 	if length > 120 {
 		return false
 	}
+
+	match, _ := regexp.MatchString(`^\d+[A-Z]`, s)
+	if match {
+		return true
+	}
+
 	if length < 80 && strings.HasSuffix(s, ":") {
 		return true
 	}
