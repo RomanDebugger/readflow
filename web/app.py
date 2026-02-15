@@ -1,81 +1,127 @@
 import streamlit as st
-import os
 import json
-import subprocess
+import os
 import base64
+import subprocess
+from dotenv import load_dotenv
+import requests
+env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+load_dotenv(dotenv_path=env_path)
 
-# Configuration
-st.set_page_config(page_title="Readflow Intelligence", layout="wide")
+st.set_page_config(page_title="Readflow v1.0", layout="wide")
 
-# Directory setup
+st.markdown("""
+    <style>
+    .main { background-color: #0e1117; color: #e0e0e0; }
+    .nav-card {
+        background-color: #161b22;
+        padding: 12px;
+        border-radius: 8px;
+        border-left: 5px solid #00d4ff;
+        margin-bottom: 10px;
+        transition: 0.3s;
+    }
+    .nav-card:hover { border-left: 5px solid #ffffff; background-color: #1c2128; }
+    .stSlider [data-baseweb="slider"] { margin-top: 20px; }
+    </style>
+""", unsafe_allow_html=True)
+
 INPUT_DIR = "data/input_pdfs"
 CHUNK_DIR = "data/chunks"
 
-def run_backend():
-    """Triggers the Go Pipeline"""
-    with st.spinner("Readflow Go-Engine is extracting and scoring..."):
-        result = subprocess.run(["go", "run", "src/main.go"], capture_output=True, text=True)
-        if result.returncode == 0:
-            st.success("Pipeline Complete!")
-        else:
-            st.error(f"Backend Error: {result.stderr}")
-
-def display_pdf(file_path):
-    """Shows the PDF in the UI"""
+def get_pdf_viewer(file_path, page):
+    """Embeds PDF with page-specific anchoring"""
     with open(file_path, "rb") as f:
         base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-    pdf_display = f'<embed src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf">'
-    st.markdown(pdf_display, unsafe_allow_html=True)
+    return f'<embed src="data:application/pdf;base64,{base64_pdf}#page={page}" width="100%" height="950" type="application/pdf">'
 
-# --- UI LAYOUT ---
-st.title("🔍 Readflow | Document Intelligence")
+with st.sidebar:
+    st.title("Readflow Engine")
+    uploaded_file = st.file_uploader("Drop Technical PDF", type="pdf")
+    
+    q_threshold = st.slider("Signal Sensitivity (Quality Filter)", 0.0, 1.0, 0.6)
+    st.caption("Lower: Show more context | Higher: Show structural anchors only")
 
-# 1. File Uploader
-uploaded_file = st.file_uploader("Drop a technical PDF here", type="pdf")
+    if uploaded_file:
+        save_path = os.path.join(INPUT_DIR, uploaded_file.name)
+        with open(save_path, "wb") as f:
+            f.write(uploaded_file.getbuffer())
+        
+        if st.button("Re-Analyze Structure", use_container_width=True):
+            subprocess.run(["go", "run", "src/main.go"])
+            st.rerun()
 
 if uploaded_file:
-    # Save the file to your Go input directory
-    file_path = os.path.join(INPUT_DIR, uploaded_file.name)
-    with open(file_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
+    json_path = os.path.join(CHUNK_DIR, uploaded_file.name.replace(".pdf", ".json"))
     
-    # Run the Go pipeline automatically
-    if st.button("Analyze Document Structure"):
-        run_backend()
+    if os.path.exists(json_path):
+        with open(json_path, "r") as f:
+            data = json.load(f)
 
-    # 2. Main Workspace (Split View)
-    col1, col2 = st.columns([1, 1])
+        col_pdf, col_intel = st.columns([1.5, 1])
 
-    with col1:
-        st.subheader("Original Document")
-        display_pdf(file_path)
+        with col_pdf:
+            target_page = st.session_state.get("page", 1)
+            st.markdown(get_pdf_viewer(save_path, target_page), unsafe_allow_html=True)
 
-    with col2:
-        st.subheader("Intelligence Stream")
-        
-        # Load the resulting JSON
-        json_path = os.path.join(CHUNK_DIR, uploaded_file.name.replace(".pdf", ".json"))
-        
-        if os.path.exists(json_path):
-            with open(json_path, "r") as f:
-                chunks = json.load(f)
-            
-            # Quality Filter Slider
-            q_threshold = st.slider("Quality Threshold (Heuristic Filter)", 0.0, 1.0, 0.4)
-            
-            for c in chunks:
-                if c['quality'] >= q_threshold:
-                    # Style based on Type
-                    bg_color = "#f0f2f6" if c['type'] == 'paragraph' else "#e1f5fe"
-                    border_color = "#1E88E5" if c['type'] == 'title' else "#cfd8dc"
+        with col_intel:
+            tab_nav, tab_chat = st.tabs(["📍 Semantic Navigator", "🤖 AI Expert"])
+
+            with tab_nav:
+                st.subheader("Gated Structural Anchors")
+                filtered_chunks = [c for c in data if c['quality'] >= q_threshold]
+                st.info(f"Showing {len(filtered_chunks)} high-signal units.")
+
+                for c in filtered_chunks:
+                    with st.container():
+                        label = f"[{c['type'].upper()}] Page {c['page']}"
+                        if st.button(f"{label}: {c['text'][:60]}...", key=c['chunk_id']):
+                            st.session_state.page = c['page']
+                            st.rerun()
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+            with tab_chat:
+                st.subheader("Intelligent Query")
+                
+                if "messages" not in st.session_state:
+                    st.session_state.messages = []
+
+                for message in st.session_state.messages:
+                    with st.chat_message(message["role"]):
+                        st.markdown(message["content"])
+
+                user_query = st.chat_input("Query high-signal context...")
+                
+                if user_query:
+                    st.session_state.messages.append({"role": "user", "content": user_query})
+                    with st.chat_message("user"):
+                        st.markdown(user_query)
+
+                    context_text = "\n".join([f"PAGE {c['page']}: {c['text']}" for c in filtered_chunks])
                     
-                    st.markdown(f"""
-                        <div style="background-color:{bg_color}; border-left: 5px solid {border_color}; padding:15px; margin-bottom:10px; border-radius:5px; color: black;">
-                            <small style="color:gray;">Page {c['page']} | Score: {c['quality']:.2f}</small>
-                            <div style="font-weight:{'bold' if c['type'] == 'title' else 'normal'}; font-size:{'20px' if c['type'] == 'title' else '16px'};">
-                                {c['text']}
-                            </div>
-                        </div>
-                    """, unsafe_allow_html=True)
-        else:
-            st.info("Run the Analysis to see extracted intelligence.")
+                    with st.chat_message("assistant"):
+                        with st.spinner("Ollama is reconstructing and analyzing..."):
+                            try:
+                                response = requests.post(
+                                    "http://localhost:11434/api/generate",
+                                    json={
+                                        "model": "gemma3:latest",
+                                        "prompt": f"""System: You are a document expert. 
+                                        The following context has extraction artifacts like missing spaces. 
+                                        Reconstruct the meaning, answer the question accurately, and cite the PAGE number.
+                                        
+                                        CONTEXT:
+                                        {context_text}
+                                        
+                                        USER QUESTION:
+                                        {user_query}""",
+                                        "stream": False
+                                    }
+                                )
+                                full_response = response.json().get('response', "Error: No response from local model.")
+                                st.markdown(full_response)
+                                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                            except Exception as e:
+                                st.error(f"Ollama Connection Failed. Is 'ollama serve' running? \nError: {e}")
+    else:
+        st.warning("Go-Engine Analysis Required.")
