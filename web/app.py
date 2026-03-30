@@ -4,9 +4,17 @@ import os
 import base64
 import subprocess
 from dotenv import load_dotenv
-import requests
+import google.generativeai as genai
+
 env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(dotenv_path=env_path)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-2.5-flash') 
+else:
+    st.error("GEMINI_API_KEY not found in .env file.")
 
 st.set_page_config(page_title="Readflow v1.0", layout="wide")
 
@@ -81,47 +89,50 @@ if uploaded_file:
                         st.markdown('</div>', unsafe_allow_html=True)
 
             with tab_chat:
-                st.subheader("Intelligent Query")
-                
-                if "messages" not in st.session_state:
-                    st.session_state.messages = []
+    st.subheader("Intelligent Query")
+    
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
 
-                for message in st.session_state.messages:
-                    with st.chat_message(message["role"]):
-                        st.markdown(message["content"])
+    # Display chat history
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-                user_query = st.chat_input("Query high-signal context...")
-                
-                if user_query:
-                    st.session_state.messages.append({"role": "user", "content": user_query})
-                    with st.chat_message("user"):
-                        st.markdown(user_query)
+    user_query = st.chat_input("Query high-signal context...")
+    
+    if user_query:
+        # Add user message to history
+        st.session_state.messages.append({"role": "user", "content": user_query})
+        with st.chat_message("user"):
+            st.markdown(user_query)
 
-                    context_text = "\n".join([f"PAGE {c['page']}: {c['text']}" for c in filtered_chunks])
+        # Prepare Context
+        context_text = "\n".join([f"PAGE {c['page']}: {c['text']}" for c in filtered_chunks])
+        
+        # System Instruction for the model
+        system_instruction = f"""You are a document expert for Readflow. 
+        Context provided by the Go-Refinery:
+        {context_text}
+        
+        Rules:
+        1. Reconstruct meaning from extraction artifacts.
+        2. Always cite the PAGE number.
+        3. If the answer isn't in the context, say so."""
+
+        with st.chat_message("assistant"):
+            with st.spinner("Gemini is analyzing..."):
+                try:
+                    # Initialize chat with system context
+                    chat = model.start_chat(history=[])
+                    # We send the prompt as a single turn for simplicity, 
+                    # or you can map st.session_state.messages to the history param.
+                    response = model.generate_content(f"{system_instruction}\n\nUser Question: {user_query}")
                     
-                    with st.chat_message("assistant"):
-                        with st.spinner("Ollama is reconstructing and analyzing..."):
-                            try:
-                                response = requests.post(
-                                    "http://localhost:11434/api/generate",
-                                    json={
-                                        "model": "gemma3:latest",
-                                        "prompt": f"""System: You are a document expert. 
-                                        The following context has extraction artifacts like missing spaces. 
-                                        Reconstruct the meaning, answer the question accurately, and cite the PAGE number.
-                                        
-                                        CONTEXT:
-                                        {context_text}
-                                        
-                                        USER QUESTION:
-                                        {user_query}""",
-                                        "stream": False
-                                    }
-                                )
-                                full_response = response.json().get('response', "Error: No response from local model.")
-                                st.markdown(full_response)
-                                st.session_state.messages.append({"role": "assistant", "content": full_response})
-                            except Exception as e:
-                                st.error(f"Ollama Connection Failed. Is 'ollama serve' running? \nError: {e}")
+                    full_response = response.text
+                    st.markdown(full_response)
+                    st.session_state.messages.append({"role": "assistant", "content": full_response})
+                except Exception as e:
+                    st.error(f"Gemini API Error: {e}")
     else:
         st.warning("Go-Engine Analysis Required.")
