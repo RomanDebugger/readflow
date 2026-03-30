@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  engine:
+    build: .
+    container_name: readflow-refinery
+    volumes:
+      - ./data:/root/data
+    ports:
+      - "8080:8080"
+
+  hud:
+    build: ./web
+    container_name: readflow-hud
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_URL=http://engine:8080
+      - OLLAMA_HOST=http://host.docker.internal:11434
+    depends_on:
+      - engine
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
