@@ -13,8 +13,5 @@ func NormalizeText(s string) string {
 		return r
 	}, s)
 
-	clean = strings.ReplaceAll(clean, "\n", " ")
-	clean = strings.ReplaceAll(clean, "\t", " ")
-	clean = strings.Join(strings.Fields(clean), " ")
-	return clean
+	return strings.Join(strings.Fields(clean), " ")
 }

@@ -1,48 +1,26 @@
 package chunk
 
 import (
-	"regexp"
 	"strings"
 	"unicode"
 )
 
-var numericHeading = regexp.MustCompile(`^\d+(\.\d+)*\s+\S+`)
-
-func LooksLikeHeading(s string) bool {
-	s = strings.TrimSpace(s)
-	if s == "" {
+func IsHighValueHeading(text string, fontSize float64) bool {
+	text = strings.TrimSpace(text)
+	if text == "" {
 		return false
 	}
-
-	if len(s) < 8 {
+	if len(text) < 5 {
 		return false
 	}
-
-	if strings.ContainsAny(s, "|=+*\\") || strings.HasPrefix(s, ":") {
-		return false
-	}
-
-	runes := []rune(s)
-	length := len(runes)
-	if length > 120 {
-		return false
-	}
-
-	match, _ := regexp.MatchString(`^\d+[A-Z]`, s)
-	if match {
+	// Rule 1: Physical certainty (Font Size is king)
+	if fontSize > 13.5 {
 		return true
 	}
 
-	if length < 80 && strings.HasSuffix(s, ":") {
-		return true
-	}
-	if numericHeading.MatchString(s) {
-		return true
-	}
-
-	upper := 0
-	letter := 0
-
+	// Rule 2: Fallback to your existing casing logic for standard fonts
+	runes := []rune(text)
+	upper, letter := 0, 0
 	for _, r := range runes {
 		if unicode.IsLetter(r) {
 			letter++
@@ -51,8 +29,8 @@ func LooksLikeHeading(s string) bool {
 			}
 		}
 	}
-
-	if letter > 0 && upper*2 >= letter && length < 60 {
+	// If it's short and mostly uppercase, it's a structural label
+	if letter > 0 && upper == letter && len(text) < 40 {
 		return true
 	}
 

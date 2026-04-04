@@ -20,8 +20,15 @@ func NormalizeDocument(inputPath string, outputDir string) error {
 		return err
 	}
 
+	// Process every individual chunk extracted by the Go Engine
 	for i := range doc.Pages {
-		doc.Pages[i].Text = NormalizeText(doc.Pages[i].Text)
+		// Clean the legacy RawText if you still use it
+		doc.Pages[i].RawText = NormalizeText(doc.Pages[i].RawText)
+
+		// Clean each spatial chunk while preserving its Metadata (Y, X, Type)
+		for j := range doc.Pages[i].Chunks {
+			doc.Pages[i].Chunks[j].Text = NormalizeText(doc.Pages[i].Chunks[j].Text)
+		}
 	}
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -29,7 +36,6 @@ func NormalizeDocument(inputPath string, outputDir string) error {
 	}
 
 	outPath := filepath.Join(outputDir, filepath.Base(inputPath))
-
 	outFile, err := os.Create(outPath)
 	if err != nil {
 		return err

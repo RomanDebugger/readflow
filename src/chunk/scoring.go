@@ -2,32 +2,37 @@ package chunk
 
 import (
 	"strings"
+	"unicode"
 )
 
 func ScoreChunk(c *Chunk) float32 {
-	if c.Type == "title" {
-		return 0.95
-	} // Titles are high value
-
 	var score float32 = 0.5
 
-	// Bonus for "Content Density" (Word length average)
-	words := strings.Fields(c.Text)
-	if len(words) > 0 {
-		avgLen := 0
-		for _, w := range words {
-			avgLen += len(w)
-		}
-		if (avgLen / len(words)) > 5 {
-			score += 0.2
-		} // Complex words = Higher value
+	if c.Type == "title" {
+		return 0.95
 	}
 
-	// Penalty for "Artifacts" (Too many symbols/dots)
-	if strings.Count(c.Text, ".") > 10 || strings.Count(c.Text, "-") > 10 {
+	// 1. Technical Density Check
+	// If a chunk contains a mix of letters, numbers, and units (kg, V, MHz),
+	// it's high-signal technical data.
+	numCount := 0
+	for _, r := range c.Text {
+		if unicode.IsDigit(r) {
+			numCount++
+		}
+	}
+
+	if numCount > 5 {
+		score += 0.2 // It's likely a specification or data point
+	}
+
+	// 2. Artifact Penalty (Dots/Dashes/Messy Extraction)
+	// If the Go engine sees too much punctuation, it's likely a TOC or a messy table
+	if strings.Count(c.Text, ".") > 12 || strings.Count(c.Text, "---") > 2 {
 		score -= 0.3
 	}
 
+	// 3. Format Normalization
 	if score > 1.0 {
 		score = 1.0
 	}

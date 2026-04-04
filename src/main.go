@@ -12,6 +12,32 @@ import (
 	"strings"
 )
 
+const (
+	InputDir      = "data/input_pdfs"
+	ProcessedFile = "data/processed.txt"
+	ExtractDir    = "data/extracted_text"
+	NormalizeDir  = "data/normalized_text"
+	ChunkDir      = "data/chunks"
+)
+
+func setupEnvironment() {
+	dirs := []string{InputDir, ExtractDir, NormalizeDir, ChunkDir}
+	for _, d := range dirs {
+		os.MkdirAll(d, 0755)
+	}
+}
+
+func saveJSON(v interface{}, path string) error {
+	file, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	enc := json.NewEncoder(file)
+	enc.SetIndent("", "  ")
+	return enc.Encode(v)
+}
+
 func loadProcessed(path string) map[string]bool {
 	processed := make(map[string]bool)
 	file, err := os.Open(path)
@@ -75,73 +101,65 @@ func loadDocument(path string) (*extract.DocumentText, error) {
 }
 
 func main() {
-	fmt.Println("readflow started")
+	fmt.Println("🚀 READFLOW: Structural Intelligence Engine Started")
 
-	inputDir := "data/input_pdfs"
-	processedFile := "data/processed.txt"
+	// Ensure all directories exist so the "One Command" never fails
+	setupEnvironment()
 
-	processed := loadProcessed(processedFile)
+	processed := loadProcessed(ProcessedFile)
 
-	files, err := os.ReadDir(inputDir)
+	files, err := os.ReadDir(InputDir)
 	if err != nil {
-		fmt.Println("Error reading input directory:", err)
+		fmt.Printf("❌ Critical Error: %v\n", err)
 		return
 	}
 
 	for _, f := range files {
-		if !strings.HasSuffix(f.Name(), ".pdf") {
+		if !strings.HasSuffix(f.Name(), ".pdf") || processed[f.Name()] {
 			continue
 		}
 
-		if processed[f.Name()] {
-			continue
-		}
+		fmt.Printf("\n📄 Processing: %s\n", f.Name())
 
-		fmt.Println("New PDF detected:", f.Name())
-		doc, err := extract.ExtractText(inputDir + "/" + f.Name())
+		// --- STEP 1: SPATIAL EXTRACTION ---
+		fmt.Print("  [1/3] Mapping document structure (X/Y Analysis)... ")
+		doc, err := extract.ExtractText(filepath.Join(InputDir, f.Name()))
 		if err != nil {
-			fmt.Println("Error extracting text:", err)
+			fmt.Printf("Error: %v\n", err)
 			continue
 		}
+		saveJSON(doc, filepath.Join(ExtractDir, strings.TrimSuffix(f.Name(), ".pdf")+".json"))
+		fmt.Println("Done.")
 
-		err = saveExtracted(doc, "data/extracted_text")
+		// --- STEP 2: NORMALIZATION ---
+		fmt.Print("  [2/3] Refining text & cleaning artifacts... ")
+		rawPath := filepath.Join(ExtractDir, strings.TrimSuffix(f.Name(), ".pdf")+".json")
+		err = normalize.NormalizeDocument(rawPath, NormalizeDir)
 		if err != nil {
-			fmt.Println("Error saving extracted text:", err)
+			fmt.Printf("Error: %v\n", err)
 			continue
 		}
+		fmt.Println("Done.")
 
-		rawPath := filepath.Join("data/extracted_text",
-			strings.TrimSuffix(f.Name(), ".pdf")+".json")
-
-		err = normalize.NormalizeDocument(rawPath, "data/normalized_text")
-		if err != nil {
-			fmt.Println("Normalization failed:", err)
-			continue
-		}
-
-		normalizedPath := filepath.Join(
-			"data/normalized_text",
-			strings.TrimSuffix(f.Name(), ".pdf")+".json",
-		)
-
+		// --- STEP 3: STRUCTURAL CHUNKING ---
+		fmt.Print("  [3/3] Gating signal & generating audit-ready chunks... ")
+		normalizedPath := filepath.Join(NormalizeDir, strings.TrimSuffix(f.Name(), ".pdf")+".json")
 		normalizedDoc, err := loadDocument(normalizedPath)
 		if err != nil {
-			fmt.Println("Failed to load normalized doc:", err)
+			fmt.Printf("Error: %v\n", err)
 			continue
 		}
 
-		err = chunk.ChunkDocument(*normalizedDoc, "data/chunks")
+		err = chunk.ChunkDocument(*normalizedDoc, ChunkDir)
 		if err != nil {
-			fmt.Println("Chunking failed:", err)
+			fmt.Printf("Error: %v\n", err)
 			continue
 		}
+		fmt.Println("Done.")
 
-		err = markProcessed(processedFile, f.Name())
-		if err != nil {
-			fmt.Println("Failed to mark processed:", err)
-			continue
-		}
-
+		// Finalize
+		markProcessed(ProcessedFile, f.Name())
 		processed[f.Name()] = true
+		fmt.Printf("✅ Success: %s is now refined and ready for inference.\n", f.Name())
 	}
 }

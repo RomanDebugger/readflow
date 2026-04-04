@@ -9,7 +9,6 @@ FROM alpine:latest
 WORKDIR /root/
 RUN apk --no-cache add ca-certificates
 COPY --from=builder /app/readflow-engine .
-# Ensure the data structure exists in the container
 COPY --from=builder /app/data ./data 
 EXPOSE 8080
 CMD ["./readflow-engine"]
