@@ -1,23 +1,25 @@
-version: '3.8'
-
 services:
   engine:
-    build: .
+    build: 
+      context: .
+      dockerfile: Dockerfile
     container_name: readflow-refinery
     volumes:
-      - ./data:/root/data
+      - ./data:/root/data 
     ports:
       - "8080:8080"
 
   hud:
     build: ./web
     container_name: readflow-hud
+    volumes:
+      - .:/app
     ports:
       - "8501:8501"
     environment:
       - BACKEND_URL=http://engine:8080
-      - OLLAMA_HOST=http://host.docker.internal:11434
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    working_dir: /app      
+    command: streamlit run web/app.py --server.address=0.0.0.0
     depends_on:
       - engine
-    extra_hosts:
-      - "host.docker.internal:host-gateway"

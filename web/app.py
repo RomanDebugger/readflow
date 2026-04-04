@@ -6,15 +6,19 @@ import subprocess
 from dotenv import load_dotenv
 import google.generativeai as genai
 
-env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
-load_dotenv(dotenv_path=env_path)
+load_dotenv() 
+
+if not os.getenv("GEMINI_API_KEY"):
+    env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+    load_dotenv(dotenv_path=env_path)
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     model = genai.GenerativeModel('gemini-2.5-flash') 
 else:
-    st.error("GEMINI_API_KEY not found in .env file.")
+    st.error("GEMINI_API_KEY not found. Ensure .env is mapped in docker-compose.")
 
 st.set_page_config(page_title="Readflow v1.0", layout="wide")
 
@@ -89,50 +93,43 @@ if uploaded_file:
                         st.markdown('</div>', unsafe_allow_html=True)
 
             with tab_chat:
-    st.subheader("Intelligent Query")
-    
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+                st.subheader("Intelligent Query")
+                
+                if "messages" not in st.session_state:
+                    st.session_state.messages = []
 
-    # Display chat history
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+                for message in st.session_state.messages:
+                    with st.chat_message(message["role"]):
+                        st.markdown(message["content"])
 
-    user_query = st.chat_input("Query high-signal context...")
-    
-    if user_query:
-        # Add user message to history
-        st.session_state.messages.append({"role": "user", "content": user_query})
-        with st.chat_message("user"):
-            st.markdown(user_query)
+                user_query = st.chat_input("Query high-signal context...")
+                
+                if user_query:
+                    st.session_state.messages.append({"role": "user", "content": user_query})
+                    with st.chat_message("user"):
+                        st.markdown(user_query)
 
-        # Prepare Context
-        context_text = "\n".join([f"PAGE {c['page']}: {c['text']}" for c in filtered_chunks])
-        
-        # System Instruction for the model
-        system_instruction = f"""You are a document expert for Readflow. 
-        Context provided by the Go-Refinery:
-        {context_text}
-        
-        Rules:
-        1. Reconstruct meaning from extraction artifacts.
-        2. Always cite the PAGE number.
-        3. If the answer isn't in the context, say so."""
-
-        with st.chat_message("assistant"):
-            with st.spinner("Gemini is analyzing..."):
-                try:
-                    # Initialize chat with system context
-                    chat = model.start_chat(history=[])
-                    # We send the prompt as a single turn for simplicity, 
-                    # or you can map st.session_state.messages to the history param.
-                    response = model.generate_content(f"{system_instruction}\n\nUser Question: {user_query}")
+                    context_text = "\n".join([f"PAGE {c['page']}: {c['text']}" for c in filtered_chunks])
                     
-                    full_response = response.text
-                    st.markdown(full_response)
-                    st.session_state.messages.append({"role": "assistant", "content": full_response})
-                except Exception as e:
-                    st.error(f"Gemini API Error: {e}")
+                    system_instruction = f"""You are a document expert for Readflow. 
+                    Context provided by the Go-Refinery:
+                    {context_text}
+                    
+                    Rules:
+                    1. Reconstruct meaning from extraction artifacts.
+                    2. Always cite the PAGE number.
+                    3. If the answer isn't in the context, say so."""
+
+                    with st.chat_message("assistant"):
+                        with st.spinner("Gemini is analyzing..."):
+                            try:
+                                chat = model.start_chat(history=[])
+                                response = model.generate_content(f"{system_instruction}\n\nUser Question: {user_query}")
+                                
+                                full_response = response.text
+                                st.markdown(full_response)
+                                st.session_state.messages.append({"role": "assistant", "content": full_response})
+                            except Exception as e:
+                                st.error(f"Gemini API Error: {e}")
     else:
         st.warning("Go-Engine Analysis Required.")
