@@ -1,135 +1,94 @@
-import streamlit as st
-import json
 import os
-import base64
+import json
 import subprocess
-from dotenv import load_dotenv
 import google.generativeai as genai
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from typing import List
 
-load_dotenv() 
 
-if not os.getenv("GEMINI_API_KEY"):
-    env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
-    load_dotenv(dotenv_path=env_path)
+load_dotenv()
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+model = genai.GenerativeModel('gemini-2.5-flash')
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+app = FastAPI()
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-2.5-flash') 
-else:
-    st.error("GEMINI_API_KEY not found. Ensure .env is mapped in docker-compose.")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-st.set_page_config(page_title="Readflow v1.0", layout="wide")
-
-st.markdown("""
-    <style>
-    .main { background-color: #0e1117; color: #e0e0e0; }
-    .nav-card {
-        background-color: #161b22;
-        padding: 12px;
-        border-radius: 8px;
-        border-left: 5px solid #00d4ff;
-        margin-bottom: 10px;
-        transition: 0.3s;
-    }
-    .nav-card:hover { border-left: 5px solid #ffffff; background-color: #1c2128; }
-    .stSlider [data-baseweb="slider"] { margin-top: 20px; }
-    </style>
-""", unsafe_allow_html=True)
-
-INPUT_DIR = "data/input_pdfs"
-CHUNK_DIR = "data/chunks"
-
-def get_pdf_viewer(file_path, page):
-    """Embeds PDF with page-specific anchoring"""
-    with open(file_path, "rb") as f:
-        base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-    return f'<embed src="data:application/pdf;base64,{base64_pdf}#page={page}" width="100%" height="950" type="application/pdf">'
-
-with st.sidebar:
-    st.title("Readflow Engine")
-    uploaded_file = st.file_uploader("Drop Technical PDF", type="pdf")
+class ChatRequest(BaseModel):
+    query: str
+    context: List[dict]
     
-    q_threshold = st.slider("Signal Sensitivity (Quality Filter)", 0.0, 1.0, 0.6)
-    st.caption("Lower: Show more context | Higher: Show structural anchors only")
+def get_safe_filename(file: UploadFile) -> str:
+    name = file.filename
+    if name is None:
+        raise HTTPException(status_code=400, detail="No filename provided")
+    return name
 
-    if uploaded_file:
-        save_path = os.path.join(INPUT_DIR, uploaded_file.name)
-        with open(save_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-        
-        if st.button("Re-Analyze Structure", use_container_width=True):
-            subprocess.run(["go", "run", "src/main.go"])
-            st.rerun()
-
-if uploaded_file:
-    json_path = os.path.join(CHUNK_DIR, uploaded_file.name.replace(".pdf", ".json"))
+@app.post("/api/process")
+async def process_pdf(file: UploadFile = File(...)):
+    filename = get_safe_filename(file)
+    
+    # Pathing relative to /web directory
+    input_path = os.path.join("..", "data", "input_pdfs", filename)
+    
+    with open(input_path, "wb") as f:
+        f.write(await file.read())
+    
+    # 2. Trigger the Go Engine (already modularized in /src)
+    try:
+        subprocess.run(["go", "run", "../src/main.go"], check=True)
+    except subprocess.CalledProcessError:
+        raise HTTPException(status_code=500, detail="Go Engine Failed")
+    
+    # 3. Load result from /data/chunks/
+    json_name = filename.rsplit('.', 1)[0] + ".json"
+    json_path = os.path.join("..", "data", "chunks", json_name)
     
     if os.path.exists(json_path):
         with open(json_path, "r") as f:
-            data = json.load(f)
+            return json.load(f)
+    
+    return {"error": "Refined data not found"}
 
-        col_pdf, col_intel = st.columns([1.5, 1])
+@app.post("/api/chat")
+async def chat(request: ChatRequest):
+    formatted_context = "\n".join([
+        f"[Page {c.get('page', 'Unknown')}]: {c.get('text', '')}" 
+        for c in request.context
+    ])
+    
+    prompt = f"""You are a document expert. 
+    Context: {formatted_context}
+    User: {request.query}
+    Cite specific page numbers in your answer."""
+    
+    try:
+        response = model.generate_content(prompt)
+        return {"response": response.text}
+    except Exception as e:
+        print(f"Gemini Error: {e}")
+        raise HTTPException(status_code=500, detail="Gemini failed to process request")
 
-        with col_pdf:
-            target_page = st.session_state.get("page", 1)
-            st.markdown(get_pdf_viewer(save_path, target_page), unsafe_allow_html=True)
+if os.path.exists("dist/assets"):
+    app.mount("/assets", StaticFiles(directory="dist/assets"), name="static_assets")
 
-        with col_intel:
-            tab_nav, tab_chat = st.tabs(["📍 Semantic Navigator", "🤖 AI Expert"])
-
-            with tab_nav:
-                st.subheader("Gated Structural Anchors")
-                filtered_chunks = [c for c in data if c['quality'] >= q_threshold]
-                st.info(f"Showing {len(filtered_chunks)} high-signal units.")
-
-                for c in filtered_chunks:
-                    with st.container():
-                        label = f"[{c['type'].upper()}] Page {c['page']}"
-                        if st.button(f"{label}: {c['text'][:60]}...", key=c['chunk_id']):
-                            st.session_state.page = c['page']
-                            st.rerun()
-                        st.markdown('</div>', unsafe_allow_html=True)
-
-            with tab_chat:
-                st.subheader("Intelligent Query")
-                
-                if "messages" not in st.session_state:
-                    st.session_state.messages = []
-
-                for message in st.session_state.messages:
-                    with st.chat_message(message["role"]):
-                        st.markdown(message["content"])
-
-                user_query = st.chat_input("Query high-signal context...")
-                
-                if user_query:
-                    st.session_state.messages.append({"role": "user", "content": user_query})
-                    with st.chat_message("user"):
-                        st.markdown(user_query)
-
-                    context_text = "\n".join([f"PAGE {c['page']}: {c['text']}" for c in filtered_chunks])
-                    
-                    system_instruction = f"""You are a document expert for Readflow. 
-                    Context provided by the Go-Refinery:
-                    {context_text}
-                    
-                    Rules:
-                    1. Reconstruct meaning from extraction artifacts.
-                    2. Always cite the PAGE number.
-                    3. If the answer isn't in the context, say so."""
-
-                    with st.chat_message("assistant"):
-                        with st.spinner("Gemini is analyzing..."):
-                            try:
-                                chat = model.start_chat(history=[])
-                                response = model.generate_content(f"{system_instruction}\n\nUser Question: {user_query}")
-                                
-                                full_response = response.text
-                                st.markdown(full_response)
-                                st.session_state.messages.append({"role": "assistant", "content": full_response})
-                            except Exception as e:
-                                st.error(f"Gemini API Error: {e}")
-    else:
-        st.warning("Go-Engine Analysis Required.")
+# 2. Catch-all route to serve the React UI
+@app.get("/{full_path:path}")
+async def serve_react(full_path: str):
+    # Check if the browser is asking for a specific file in dist (like favicon.svg)
+    static_file = os.path.join("dist", full_path)
+    if os.path.exists(static_file) and os.path.isfile(static_file):
+        return FileResponse(static_file)
+    
+    # If not a specific file, serve the main React index.html
+    return FileResponse("dist/index.html")
