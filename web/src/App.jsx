@@ -40,7 +40,7 @@ export default function App() {
     fd.append('file', file);
     setLoading(true);
     try {
-      const res = await axios.post('http://localhost:8000/api/process', fd);
+      const res = await axios.post('/api/process', fd);
       setChunks(res.data);
     } catch (e) {
       setError('Backend unreachable — ensure localhost:8000 is running.');
@@ -58,7 +58,7 @@ export default function App() {
     setChatLoading(true);
     try {
       const context = chunks.filter(c => c.quality >= threshold);
-      const res = await axios.post('http://localhost:8000/api/chat', { query: q, context });
+      const res = await axios.post('/api/chat', { query: q, context });
       setChat([...newMsgs, { role: 'assistant', content: res.data.response }]);
     } catch (e) {
       setChat([...newMsgs, { role: 'assistant', content: '⚠️ Could not reach inference engine.' }]);
@@ -137,7 +137,7 @@ export default function App() {
             <div className="drop-zone" onClick={() => fileRef.current?.click()}>
               <div className="drop-icon"><Upload size={22} /></div>
               <h3>Drop your document here</h3>
-              <p>Process via Go-Refinery & Chat with Gemini</p>
+              <p>Process via Go-Refinery & Chat with the Document</p>
               {error && <div className="error-banner"><AlertCircle size={13} /> {error}</div>}
             </div>
           )}
