@@ -4,12 +4,17 @@ import subprocess
 import google.generativeai as genai
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
+import os
+import json
+import requests
+import google.generativeai as genai
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List
-
 
 load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
@@ -34,31 +39,32 @@ def get_safe_filename(file: UploadFile) -> str:
         raise HTTPException(status_code=400, detail="No filename provided")
     return name
 
+# Grab the internal URL you set in Railway variables
+ENGINE_URL = os.getenv("ENGINE_URL", "http://readflow.railway.internal:8080")
+
 @app.post("/api/process")
 async def process_pdf(file: UploadFile = File(...)):
     filename = get_safe_filename(file)
     
-    # Pathing relative to /web directory
-    input_path = os.path.join("..", "data", "input_pdfs", filename)
+    # 1. Read the file into memory (DO NOT save it to disk)
+    file_bytes = await file.read()
     
-    with open(input_path, "wb") as f:
-        f.write(await file.read())
-    
-    # 2. Trigger the Go Engine (already modularized in /src)
+    # 2. Forward the file directly to the Go Engine via HTTP
     try:
-        subprocess.run(["go", "run", "../src/main.go"], check=True)
-    except subprocess.CalledProcessError:
-        raise HTTPException(status_code=500, detail="Go Engine Failed")
-    
-    # 3. Load result from /data/chunks/
-    json_name = filename.rsplit('.', 1)[0] + ".json"
-    json_path = os.path.join("..", "data", "chunks", json_name)
-    
-    if os.path.exists(json_path):
-        with open(json_path, "r") as f:
-            return json.load(f)
-    
-    return {"error": "Refined data not found"}
+        go_response = requests.post(
+            f"{ENGINE_URL}/process", 
+            files={"file": (filename, file_bytes, file.content_type or "application/pdf")}
+        )
+        
+        # 3. Return whatever JSON the Go engine gives us back to React
+        if go_response.status_code == 200:
+            return go_response.json()
+        else:
+            print(f"Go Engine Error: {go_response.text}")
+            raise HTTPException(status_code=500, detail="Go Engine failed to process the PDF")
+            
+    except requests.exceptions.ConnectionError:
+        raise HTTPException(status_code=500, detail="Could not connect to the Go Engine")
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest):
@@ -82,7 +88,6 @@ async def chat(request: ChatRequest):
 if os.path.exists("dist/assets"):
     app.mount("/assets", StaticFiles(directory="dist/assets"), name="static_assets")
 
-# 2. Catch-all route to serve the React UI
 @app.get("/{full_path:path}")
 async def serve_react(full_path: str):
     # Check if the browser is asking for a specific file in dist (like favicon.svg)
