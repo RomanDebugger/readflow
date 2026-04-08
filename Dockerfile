@@ -8,7 +8,8 @@ RUN go build -o readflow-engine ./src/main.go
 FROM alpine:latest
 WORKDIR /root/
 RUN apk --no-cache add ca-certificates
+
 COPY --from=builder /app/readflow-engine .
-COPY --from=builder /app/data ./data 
+RUN mkdir -p ./data/input_pdfs ./data/chunks
 EXPOSE 8080
 CMD ["./readflow-engine"]
