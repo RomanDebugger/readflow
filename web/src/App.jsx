@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { Cpu, MessageSquare, ChevronRight, Upload, Zap, FileText, X, Send, Sliders, Hash, BookOpen, AlertCircle, LayoutPanelLeft } from 'lucide-react';
 import './App.css';
-
+import ReactMarkdown from 'react-markdown'
 export default function App() {
   const [chunks, setChunks] = useState([]);
   const [chat, setChat] = useState([]);
@@ -197,7 +197,7 @@ export default function App() {
           {chat.map((m, i) => (
             <div key={i} className={`bubble ${m.role}`}>
               {m.role === 'assistant' && <div className="bubble-label">GEMINI</div>}
-              {m.content}
+              <ReactMarkdown>{m.content}</ReactMarkdown>
             </div>
           ))}
 
