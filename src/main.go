@@ -1,9 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"readflow/src/chunk"
@@ -38,56 +39,6 @@ func saveJSON(v interface{}, path string) error {
 	return enc.Encode(v)
 }
 
-func loadProcessed(path string) map[string]bool {
-	processed := make(map[string]bool)
-	file, err := os.Open(path)
-
-	if err != nil {
-		return processed
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		name := strings.TrimSpace(scanner.Text())
-		if name != "" {
-			processed[name] = true
-		}
-	}
-	return processed
-}
-
-func markProcessed(path string, filename string) error {
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	_, err = file.WriteString(filename + "\n")
-	return err
-}
-
-func saveExtracted(doc *extract.DocumentText, outDir string) error {
-	os.MkdirAll(outDir, 0755)
-
-	base := filepath.Base(doc.Document)
-	name := strings.TrimSuffix(base, filepath.Ext(base))
-
-	outPath := filepath.Join(outDir, name+".json")
-
-	file, err := os.Create(outPath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-
-	return encoder.Encode(doc)
-}
-
 func loadDocument(path string) (*extract.DocumentText, error) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -100,66 +51,100 @@ func loadDocument(path string) (*extract.DocumentText, error) {
 	return &doc, err
 }
 
-func main() {
-	fmt.Println("🚀 READFLOW: Structural Intelligence Engine Started")
-
-	// Ensure all directories exist so the "One Command" never fails
-	setupEnvironment()
-
-	processed := loadProcessed(ProcessedFile)
-
-	files, err := os.ReadDir(InputDir)
-	if err != nil {
-		fmt.Printf("❌ Critical Error: %v\n", err)
+// 🚀 NEW: This is the HTTP Handler that catches the file from Python
+func processHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	for _, f := range files {
-		if !strings.HasSuffix(f.Name(), ".pdf") || processed[f.Name()] {
-			continue
-		}
+	// 1. Catch the uploaded file
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "Failed to read file from request", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
 
-		fmt.Printf("\n📄 Processing: %s\n", f.Name())
+	filename := header.Filename
+	fmt.Printf("\n📥 Incoming HTTP Request: Processing %s\n", filename)
 
-		// --- STEP 1: SPATIAL EXTRACTION ---
-		fmt.Print("  [1/3] Mapping document structure (X/Y Analysis)... ")
-		doc, err := extract.ExtractText(filepath.Join(InputDir, f.Name()))
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			continue
-		}
-		saveJSON(doc, filepath.Join(ExtractDir, strings.TrimSuffix(f.Name(), ".pdf")+".json"))
-		fmt.Println("Done.")
+	// 2. Save it temporarily so your existing pipeline can use it
+	inputPath := filepath.Join(InputDir, filename)
+	outFile, err := os.Create(inputPath)
+	if err != nil {
+		http.Error(w, "Failed to save temp file", http.StatusInternalServerError)
+		return
+	}
+	io.Copy(outFile, file)
+	outFile.Close()
 
-		// --- STEP 2: NORMALIZATION ---
-		fmt.Print("  [2/3] Refining text & cleaning artifacts... ")
-		rawPath := filepath.Join(ExtractDir, strings.TrimSuffix(f.Name(), ".pdf")+".json")
-		err = normalize.NormalizeDocument(rawPath, NormalizeDir)
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			continue
-		}
-		fmt.Println("Done.")
+	// --- STEP 1: SPATIAL EXTRACTION ---
+	fmt.Print("  [1/3] Mapping document structure... ")
+	doc, err := extract.ExtractText(inputPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Extraction error: %v", err), http.StatusInternalServerError)
+		return
+	}
+	rawPath := filepath.Join(ExtractDir, strings.TrimSuffix(filename, ".pdf")+".json")
+	saveJSON(doc, rawPath)
+	fmt.Println("Done.")
 
-		// --- STEP 3: STRUCTURAL CHUNKING ---
-		fmt.Print("  [3/3] Gating signal & generating audit-ready chunks... ")
-		normalizedPath := filepath.Join(NormalizeDir, strings.TrimSuffix(f.Name(), ".pdf")+".json")
-		normalizedDoc, err := loadDocument(normalizedPath)
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			continue
-		}
+	// --- STEP 2: NORMALIZATION ---
+	fmt.Print("  [2/3] Refining text... ")
+	err = normalize.NormalizeDocument(rawPath, NormalizeDir)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Normalization error: %v", err), http.StatusInternalServerError)
+		return
+	}
+	fmt.Println("Done.")
 
-		err = chunk.ChunkDocument(*normalizedDoc, ChunkDir)
-		if err != nil {
-			fmt.Printf("Error: %v\n", err)
-			continue
-		}
-		fmt.Println("Done.")
+	// --- STEP 3: STRUCTURAL CHUNKING ---
+	fmt.Print("  [3/3] Generating chunks... ")
+	normalizedPath := filepath.Join(NormalizeDir, strings.TrimSuffix(filename, ".pdf")+".json")
+	normalizedDoc, err := loadDocument(normalizedPath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Loading normalized doc error: %v", err), http.StatusInternalServerError)
+		return
+	}
 
-		// Finalize
-		markProcessed(ProcessedFile, f.Name())
-		processed[f.Name()] = true
-		fmt.Printf("✅ Success: %s is now refined and ready for inference.\n", f.Name())
+	err = chunk.ChunkDocument(*normalizedDoc, ChunkDir)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Chunking error: %v", err), http.StatusInternalServerError)
+		return
+	}
+	fmt.Println("Done.")
+
+	// --- STEP 4: SEND JSON BACK TO PYTHON ---
+	finalChunkPath := filepath.Join(ChunkDir, strings.TrimSuffix(filename, ".pdf")+".json")
+	finalData, err := os.ReadFile(finalChunkPath)
+	if err != nil {
+		http.Error(w, "Failed to read final chunks", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(finalData)
+	fmt.Printf("✅ Success: %s processed and sent back to frontend.\n", filename)
+}
+
+func main() {
+	setupEnvironment()
+
+	// Tell Go to route any /process requests to our handler function
+	http.HandleFunc("/process", processHandler)
+
+	// Railway assigns a PORT environment variable, so we grab that
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080" // Default to 8080 if running locally
+	}
+
+	fmt.Printf("🚀 READFLOW: Go Engine running and listening on port %s...\n", port)
+
+	// Start the server (The "0.0.0.0:" ensures it listens to external Docker traffic)
+	if err := http.ListenAndServe("0.0.0.0:"+port, nil); err != nil {
+		fmt.Printf("❌ Critical Server Error: %v\n", err)
 	}
 }
