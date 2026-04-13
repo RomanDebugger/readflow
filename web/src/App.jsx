@@ -13,7 +13,7 @@ export default function App() {
   const [fileName, setFileName] = useState('');
   const [pdfUrl, setPdfUrl] = useState(null);
   const [pdfPage, setPdfPage] = useState(1);
-  const [view, setView] = useState('pdf'); // 'pdf' | 'data' | 'raw'
+  const [view, setView] = useState('pdf');
   const [error, setError] = useState('');
 
   const chatEndRef = useRef(null);
@@ -22,7 +22,6 @@ export default function App() {
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [chat, chatLoading]);
 
-  /* ── UPLOAD & PDF HANDLING ── */
   const processFile = async (file) => {
     if (!file) return;
     setFileName(file.name);
@@ -30,11 +29,10 @@ export default function App() {
     setChat([]);
     setError('');
 
-    // Create local URL for the PDF Viewer
     const localUrl = URL.createObjectURL(file);
     setPdfUrl(localUrl);
     setPdfPage(1);
-    setView('pdf'); // Default to showing the PDF
+    setView('pdf');
 
     const fd = new FormData();
     fd.append('file', file);
@@ -48,7 +46,6 @@ export default function App() {
     setLoading(false);
   };
 
-  /* ── CHAT INFERENCE ── */
   const sendChat = async () => {
     const q = query.trim();
     if (!q || chatLoading) return;
@@ -61,13 +58,12 @@ export default function App() {
       const res = await axios.post('/api/chat', { query: q, context });
       setChat([...newMsgs, { role: 'assistant', content: res.data.response }]);
     } catch (e) {
-      setChat([...newMsgs, { role: 'assistant', content: '⚠️ Could not reach inference engine.' }]);
+      setChat([...newMsgs, { role: 'assistant', content: 'Could not reach inference engine.' }]);
     }
     setChatLoading(false);
     inputRef.current?.focus();
   };
 
-  /* ── NAVIGATION: Jump PDF to Page ── */
   const handleNavClick = (page) => {
     setView('pdf');
     setPdfPage(page);
@@ -78,7 +74,6 @@ export default function App() {
 
   return (
     <div className="layout">
-      {/* ══════════ LEFT NAV ══════════ */}
       <aside className="sidebar">
         <div className="sidebar-header">
           <div className="logo-row">
@@ -106,7 +101,6 @@ export default function App() {
         </div>
       </aside>
 
-      {/* ══════════ MIDDLE INSPECTOR ══════════ */}
       <main className="inspector">
         <header className="inspector-toolbar">
           <div className="toolbar-left">
@@ -149,10 +143,8 @@ export default function App() {
             </div>
           )}
 
-          {/* PDF VIEWER TAB */}
           {!loading && pdfUrl && view === 'pdf' && (
             <div className="pdf-container">
-              {/* key={pdfPage} forces the iframe to reload and jump to the correct page */}
               <iframe
                 key={pdfPage}
                 src={`${pdfUrl}#page=${pdfPage}&toolbar=0&navpanes=0`}
@@ -162,7 +154,6 @@ export default function App() {
             </div>
           )}
 
-          {/* EXTRACTED DATA TAB */}
           {!loading && chunks.length > 0 && view === 'data' && (
             <div className="chunk-grid">
               {visibleChunks.map((c) => (
@@ -179,7 +170,6 @@ export default function App() {
         </div>
       </main>
 
-      {/* ══════════ RIGHT CONSOLE ══════════ */}
       <aside className="console">
         <header className="console-header">
           <div className="console-title"><div className={`status-dot ${chunks.length ? 'active' : ''}`} /> GEMINI CONSOLE</div>

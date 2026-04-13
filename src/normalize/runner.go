@@ -20,12 +20,9 @@ func NormalizeDocument(inputPath string, outputDir string) error {
 		return err
 	}
 
-	// Process every individual chunk extracted by the Go Engine
 	for i := range doc.Pages {
-		// Clean the legacy RawText if you still use it
 		doc.Pages[i].RawText = NormalizeText(doc.Pages[i].RawText)
 
-		// Clean each spatial chunk while preserving its Metadata (Y, X, Type)
 		for j := range doc.Pages[i].Chunks {
 			doc.Pages[i].Chunks[j].Text = NormalizeText(doc.Pages[i].Chunks[j].Text)
 		}

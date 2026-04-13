@@ -51,14 +51,12 @@ func loadDocument(path string) (*extract.DocumentText, error) {
 	return &doc, err
 }
 
-// 🚀 NEW: This is the HTTP Handler that catches the file from Python
 func processHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	// 1. Catch the uploaded file
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "Failed to read file from request", http.StatusBadRequest)
@@ -67,9 +65,8 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	filename := header.Filename
-	fmt.Printf("\n📥 Incoming HTTP Request: Processing %s\n", filename)
+	fmt.Printf("\nIncoming HTTP Request: Processing %s\n", filename)
 
-	// 2. Save it temporarily so your existing pipeline can use it
 	inputPath := filepath.Join(InputDir, filename)
 	outFile, err := os.Create(inputPath)
 	if err != nil {
@@ -79,7 +76,6 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	io.Copy(outFile, file)
 	outFile.Close()
 
-	// --- STEP 1: SPATIAL EXTRACTION ---
 	fmt.Print("  [1/3] Mapping document structure... ")
 	doc, err := extract.ExtractText(inputPath)
 	if err != nil {
@@ -90,7 +86,6 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	saveJSON(doc, rawPath)
 	fmt.Println("Done.")
 
-	// --- STEP 2: NORMALIZATION ---
 	fmt.Print("  [2/3] Refining text... ")
 	err = normalize.NormalizeDocument(rawPath, NormalizeDir)
 	if err != nil {
@@ -99,7 +94,6 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Println("Done.")
 
-	// --- STEP 3: STRUCTURAL CHUNKING ---
 	fmt.Print("  [3/3] Generating chunks... ")
 	normalizedPath := filepath.Join(NormalizeDir, strings.TrimSuffix(filename, ".pdf")+".json")
 	normalizedDoc, err := loadDocument(normalizedPath)
@@ -115,7 +109,6 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Println("Done.")
 
-	// --- STEP 4: SEND JSON BACK TO PYTHON ---
 	finalChunkPath := filepath.Join(ChunkDir, strings.TrimSuffix(filename, ".pdf")+".json")
 	finalData, err := os.ReadFile(finalChunkPath)
 	if err != nil {
@@ -126,25 +119,22 @@ func processHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(finalData)
-	fmt.Printf("✅ Success: %s processed and sent back to frontend.\n", filename)
+	fmt.Printf("Success: %s processed and sent back to frontend.\n", filename)
 }
 
 func main() {
 	setupEnvironment()
 
-	// Tell Go to route any /process requests to our handler function
 	http.HandleFunc("/process", processHandler)
 
-	// Railway assigns a PORT environment variable, so we grab that
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080" // Default to 8080 if running locally
+		port = "8080"
 	}
 
-	fmt.Printf("🚀 READFLOW: Go Engine running and listening on port %s...\n", port)
+	fmt.Printf("READFLOW: Go Engine running and listening on port %s...\n", port)
 
-	// Start the server (The "0.0.0.0:" ensures it listens to external Docker traffic)
 	if err := http.ListenAndServe("0.0.0.0:"+port, nil); err != nil {
-		fmt.Printf("❌ Critical Server Error: %v\n", err)
+		fmt.Printf("Critical Server Error: %v\n", err)
 	}
 }

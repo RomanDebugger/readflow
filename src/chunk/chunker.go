@@ -10,7 +10,7 @@ import (
 	"readflow/src/extract"
 )
 
-const MaxChunkSize = 750 // Increased slightly for better Gemini reasoning
+const MaxChunkSize = 750
 
 func ChunkDocument(doc extract.DocumentText, outDir string) error {
 	var chunks []Chunk
@@ -18,39 +18,26 @@ func ChunkDocument(doc extract.DocumentText, outDir string) error {
 	chunkIndex := 0
 
 	for _, page := range doc.Pages {
-		// Reset buffer logic per page if you want to avoid merging page boundaries,
-		// but usually, continuing across pages is better for flow.
 
 		for _, raw := range page.Chunks {
-
-			// 1. THE "NOISE GATE": Drop headers/footers identified by Go
 			if raw.Type == "header" || raw.Type == "footer" {
 				continue
 			}
-
-			// 2. HEADING DETECTION: Uses the new Font-Size heuristic
-			// We check the raw chunk type AND your existing heuristic logic
 			isHeading := raw.Type == "heading" || IsHighValueHeading(raw.Text, raw.FontSize)
 
 			if isHeading {
-				// Flush current buffer as a paragraph before starting the new section
 				if buffer.Len() > 0 {
 					chunks = append(chunks, finalizeChunk(buffer.String(), "paragraph", page.Page, chunkIndex, doc.Document, raw.FontSize))
 					buffer.Reset()
 					chunkIndex++
 				}
-				// Create the Heading/Title chunk immediately
 				chunks = append(chunks, finalizeChunk(raw.Text, "title", page.Page, chunkIndex, doc.Document, raw.FontSize))
 				chunkIndex++
 				continue
 			}
-
-			// 3. SMART SENTENCE SPLITTING:
-			// Instead of raw text, we split the individual body chunk into sentences
 			sentences := SplitIntoSentences(raw.Text)
 
 			for _, s := range sentences {
-				// If adding this sentence exceeds MaxChunkSize, flush buffer
 				if buffer.Len()+len(s)+1 > MaxChunkSize {
 					chunks = append(chunks, finalizeChunk(buffer.String(), "paragraph", page.Page, chunkIndex, doc.Document, raw.FontSize))
 					buffer.Reset()
@@ -64,8 +51,6 @@ func ChunkDocument(doc extract.DocumentText, outDir string) error {
 			}
 		}
 	}
-
-	// Final Flush for any remaining text
 	if buffer.Len() > 0 {
 		chunks = append(chunks, finalizeChunk(buffer.String(), "paragraph", 0, chunkIndex, doc.Document, 0))
 	}
@@ -73,7 +58,6 @@ func ChunkDocument(doc extract.DocumentText, outDir string) error {
 	return saveToFile(chunks, doc.Document, outDir)
 }
 
-// finalizeChunk handles the creation, metadata attachment, and scoring
 func finalizeChunk(text string, cType string, page int, idx int, docPath string, fSize float64) Chunk {
 	c := Chunk{
 		ChunkID: fmt.Sprintf("%s_c%d", filepath.Base(docPath), idx),
@@ -89,7 +73,6 @@ func finalizeChunk(text string, cType string, page int, idx int, docPath string,
 		},
 	}
 
-	// Apply your upgraded Scoring logic
 	c.Quality = ScoreChunk(&c)
 	return c
 }
