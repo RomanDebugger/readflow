@@ -3,9 +3,9 @@
 Readflow is a distributed microservice pipeline designed to solve the "text soup" problem in standard RAG applications. Instead of blindly slicing PDFs into unstructured text chunks, Readflow uses a dedicated Go engine to map spatial coordinates and enforce strict, verifiable page-level citations before the LLM ever sees the data.
 
 <p align="center">
-<img src="/web/public/implementation.png" width="900" alt="Readflow UI showing structural anchors and cited markdown">
+<img src="/web/public/implementation.png" width="900">
 <br>
-<i>Figure 1: The Readflow UI demonstrating interactive structural anchors, spatial chunking, and grounded AI inference.</i>
+<i>https://merry-respect-production-75ba.up.railway.app/</i>
 </p>
 
 ## The Core Hypothesis
